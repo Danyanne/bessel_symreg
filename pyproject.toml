@@ -32,7 +32,6 @@ dependencies = [
     "scikit-learn>=1.0",
     "scikit-image>=0.19",
     "pyoperon",
-    "pysr",
     "optuna",
     "tqdm~=4.62",
     "dill~=0.3.8",
@@ -50,6 +49,7 @@ dev = [
     "jupyterlab",
     "ipykernel",
     "rich",
+    "pysr",
 ]
 
 
