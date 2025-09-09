@@ -35,60 +35,49 @@ from pysr import PySRRegressor
 import pandas as pd
 
 def create_arbitrary_constraint(expression_string: str, 
-                            target_value: float, 
-                            full_param_symbols: List[sp.Symbol],
-                            constraint_type: str = 'eq') -> Dict[str, Any]:
+                                target_value: float, 
+                                full_param_symbols: List[sp.Symbol],
+                                constraint_type: str = 'eq') -> Dict[str, Any]:
     """Creates a single, correctly formatted and numerically robust constraint.
 
-    This helper function takes a user-defined mathematical expression as a string
-    and converts it into a constraint dictionary. The function it returns is
-    "defensive," meaning it will catch numerical errors (inf/NaN) and return a
-    large penalty, preventing the optimizer from crashing.
-
     Args:
-        expression_string (str):
-            The mathematical condition, e.g., "b1 + b2" or "b3 / b4".
-        target_value (float):
-            The value the expression should be constrained against.
-        full_param_symbols (List[sp.Symbol]):
-            The complete, ordered list of sympy.Symbol objects being used in the
-            main optimization routine.
-        constraint_type (str, optional):
-            The type of constraint, 'eq' (equality) or 'ineq' (inequality).
-            Defaults to 'eq'.
+        expression_string (str): The mathematical condition, e.g., "b1 + b2".
+        target_value (float): The value the expression should be constrained against.
+        full_param_symbols (List[sp.Symbol]): The complete, ordered list of sympy.Symbol objects.
+        constraint_type (str, optional): 'eq' or 'ineq'. Defaults to 'eq'.
 
     Returns:
-        Dict[str, Any]: A constraint dictionary ready for `scipy.optimize.minimize`.
+        Dict[str, Any]: A constraint dictionary ready for scipy.optimize.minimize.
     """
     if constraint_type not in ['eq', 'ineq']:
         raise ValueError("constraint_type must be either 'eq' or 'ineq'.")
-        
+
+    # Parse expression safely
     local_symbol_dict = {str(s): s for s in full_param_symbols}
     parsed_expr = sp.parse_expr(expression_string, local_dict=local_symbol_dict)
     constraint_expr = parsed_expr - target_value
     constraint_lambda = sp.lambdify(full_param_symbols, constraint_expr, 'numpy')
-    
+
     # --- DEFENSIVE CONSTRAINT FUNCTION ---
-    # This wrapper function will be the actual constraint passed to the optimizer.
     def defensive_fun(b_values):
         try:
-            # Use errstate to treat numpy warnings as errors
             with np.errstate(all='raise'):
-                # Calculate the constraint violation
                 violation = constraint_lambda(*b_values)
-                
-                # If the result is not a finite number, this region is invalid.
-                if not np.isfinite(violation):
-                    # For constraints, returning a large value indicates a large violation.
-                    return 1e12 
-                
-                return float(violation)
 
-        except (FloatingPointError, ValueError, ZeroDivisionError):
-            # If any numerical error occurs, penalize this parameter set heavily.
+                # Convert to numpy array (handles scalars, lists, sympy types)
+                violation = np.asarray(violation, dtype=float)
+
+                if not np.all(np.isfinite(violation)):
+                    return 1e12
+
+                # If scalar, return float. If vector, return ndarray.
+                if violation.size == 1:
+                    return float(violation)
+                return violation
+
+        except (FloatingPointError, ValueError, ZeroDivisionError, TypeError):
             return 1e12
 
-    # Return the final constraint dictionary with the robust function.
     return {
         'type': constraint_type,
         'fun': defensive_fun
@@ -861,7 +850,7 @@ class Problem:
         
         #printing the results in a formatted way
         for obj, expr, mdl, mse in res:
-           print(f'{obj}, {mdl:.2f}, {reg.get_model_string(expr, 12)}, {mse:.2f}')
+           print(f'{obj}, {mdl:.2f}, {reg.get_model_string(expr, 18)}, {mse:.2f}')
 
         self.symbolic_regressor = reg
         self.solve_state = True
@@ -870,7 +859,7 @@ class Problem:
         for idx, s in enumerate(reg.pareto_front_):
             model = s['model']
             tree = s['tree']
-            string_expression = reg.get_model_string(tree, 12)
+            string_expression = reg.get_model_string(tree, 18)
             r2 = s['objective_values'][0]  # assuming R2
             mse = s['mean_squared_error']
             mdl = s['minimum_description_length']
